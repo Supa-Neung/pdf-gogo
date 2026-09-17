@@ -18,7 +18,6 @@ const state = {
   currentStroke: null,
   strokes: {},
   originalPdfjs: null, resultBytes: null, resultFilename: null, resultData: null, resultType: "application/pdf", splitParts: null, viewingResult: false,
-  history: [], resultCommittable: false,
 };
 
 const els = {
@@ -41,38 +40,10 @@ function downloadBlob(data, filename, type = "application/pdf") {
   a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
-function clearResult(){state.resultBytes=null;state.resultFilename=null;state.resultData=null;state.resultType="application/pdf";state.splitParts=null;state.resultCommittable=false;$("showResult").disabled=true;$("downloadResult").disabled=true;if($("commitResult"))$("commitResult").disabled=true;}
-async function setResult(bytes,filename){state.resultBytes=new Uint8Array(bytes);state.resultData=state.resultBytes;state.resultType="application/pdf";state.resultFilename=filename;state.splitParts=null;state.resultCommittable=true;$("showResult").disabled=false;$("downloadResult").disabled=false;if($("commitResult"))$("commitResult").disabled=false;await showResult();setStatus("สร้าง Preview แล้ว กรุณาตรวจสอบก่อน Download หรือกด \"ใช้ผลลัพธ์นี้ต่อ\" เพื่อทำรายการถัดไปแบบต่อเนื่อง","success");}
+function clearResult(){state.resultBytes=null;state.resultFilename=null;state.resultData=null;state.resultType="application/pdf";state.splitParts=null;$("showResult").disabled=true;$("downloadResult").disabled=true;}
+async function setResult(bytes,filename){state.resultBytes=new Uint8Array(bytes);state.resultData=state.resultBytes;state.resultType="application/pdf";state.resultFilename=filename;state.splitParts=null;$("showResult").disabled=false;$("downloadResult").disabled=false;await showResult();setStatus("สร้าง Preview แล้ว กรุณาตรวจสอบก่อน Download","success");}
 async function showResult(){if(!state.resultBytes)return;state.pdfjs=await pdfjsLib.getDocument({data:state.resultBytes.slice()}).promise;state.page=1;els.pageCount.textContent=state.pdfjs.numPages;await renderPage(1);}
 async function showOriginal(){if(!state.originalPdfjs)return;state.pdfjs=state.originalPdfjs;state.page=1;els.pageCount.textContent=state.pdfjs.numPages;await renderPage(1);}
-
-async function commitResult(){
-  if(!state.resultCommittable || !state.resultBytes) throw new Error("ผลลัพธ์นี้ใช้ต่อไม่ได้ (เช่นไฟล์ ZIP) กรุณา Download แทน");
-  state.history.push(state.bytes);
-  $("undoLast").disabled = false;
-  state.bytes = new Uint8Array(state.resultBytes);
-  state.originalPdfjs = await pdfjsLib.getDocument({ data: state.bytes.slice() }).promise;
-  state.pdfjs = state.originalPdfjs;
-  state.page = 1; state.editorPages = {}; state.strokes = {};
-  els.pageCount.textContent = state.originalPdfjs.numPages;
-  els.fileInfo.textContent = `${state.file.name} • ${formatBytes(state.bytes.length)} • ${state.originalPdfjs.numPages} หน้า (แก้ไขแล้ว)`;
-  clearResult();
-  await renderPage(1);
-  setStatus("ใช้ผลลัพธ์นี้เป็นไฟล์ทำงานหลักแล้ว ทำรายการถัดไปต่อได้เลย","success");
-}
-async function undoLast(){
-  if(!state.history.length) throw new Error("ไม่มีขั้นตอนให้ย้อนกลับแล้ว");
-  state.bytes = state.history.pop();
-  $("undoLast").disabled = state.history.length===0;
-  state.originalPdfjs = await pdfjsLib.getDocument({ data: state.bytes.slice() }).promise;
-  state.pdfjs = state.originalPdfjs;
-  state.page = 1; state.editorPages = {}; state.strokes = {};
-  els.pageCount.textContent = state.originalPdfjs.numPages;
-  els.fileInfo.textContent = `${state.file.name} • ${formatBytes(state.bytes.length)} • ${state.originalPdfjs.numPages} หน้า`;
-  clearResult();
-  await renderPage(1);
-  setStatus("ย้อนกลับไปยังไฟล์ทำงานก่อนหน้าแล้ว","info");
-}
 async function downloadResult(){
 
     try{
@@ -131,12 +102,6 @@ async function downloadResult(){
         else if(tool==="watermark")
             await addWatermark();
 
-        else if(tool==="compress")
-            await compressPDF();
-
-        else if(tool==="imageToPdf")
-            await imagesToPDF();
-
         else {
 
             setStatus(
@@ -188,7 +153,6 @@ async function loadMainFile(file) {
     const pdfjs = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
     state.file = file; state.bytes = bytes; state.pdfjs = pdfjs; state.originalPdfjs = pdfjs; state.page = 1; state.scale = 1; clearResult(); $("showOriginal").disabled=false;
     state.strokes = {}; state.penEnabled = false; els.stage.classList.remove("pen-active");
-    state.history = []; if($("undoLast")) $("undoLast").disabled = true;
     els.fileInfo.textContent = `${file.name} • ${formatBytes(file.size)} • ${pdfjs.numPages} หน้า`;
     els.pageCount.textContent = pdfjs.numPages; els.empty.hidden = true; els.stage.hidden = false;
     setStatus("เปิดไฟล์เรียบร้อย", "success"); await renderPage(1);
@@ -226,8 +190,6 @@ $("zoomOut").onclick=()=>{if(state.pdfjs){state.scale=Math.max(.4,state.scale-.2
 $("fitWidth").onclick=async()=>{if(!state.pdfjs)return;const p=await state.pdfjs.getPage(state.page);const v=p.getViewport({scale:1});state.scale=Math.max(.4,(els.shell.clientWidth-50)/v.width);renderPage(state.page);};
 $("resetBtn").onclick=()=>location.reload();
 $("showOriginal").onclick=showOriginal; $("showResult").onclick=showResult; $("downloadResult").onclick=downloadResult;
-$("commitResult").onclick=e=>runTask(e.currentTarget,"ใช้ผลลัพธ์นี้ต่อ",commitResult);
-$("undoLast").onclick=e=>runTask(e.currentTarget,"Undo",undoLast);
 
 document.querySelectorAll("[data-tool]").forEach(btn=>btn.addEventListener("click",()=>selectTool(btn.dataset.tool,btn)));
 function selectTool(tool, button) {
@@ -241,8 +203,8 @@ function selectTool(tool, button) {
     rotate: `<h2 class="h6">🔄 หมุนทุกหน้า</h2><select id="rotateAngle" class="form-select mb-3"><option value="90">90° ตามเข็ม</option><option value="180">180°</option><option value="270">90° ทวนเข็ม</option></select><button id="rotateRun" class="btn btn-primary w-100">Preview ผลลัพธ์</button>`,
     watermark: `<h2 class="h6">💧 เพิ่มลายน้ำ</h2><label class="form-label">ข้อความ</label><input id="wmText" class="form-control mb-3" value="สุดยอดมากเลยครับ"><div class="row g-2"><div class="col-6"><label class="form-label">สี</label><input id="wmColor" class="form-control form-control-color w-100" type="color" value="#dc2626"></div><div class="col-6"><label class="form-label">ขนาด</label><input id="wmSize" class="form-control" type="number" min="18" max="160" value="60"></div><div class="col-6"><label class="form-label">โปร่งใส %</label><input id="wmOpacity" class="form-control" type="number" min="5" max="100" value="25"></div><div class="col-6"><label class="form-label">มุม</label><input id="wmAngle" class="form-control" type="number" min="-90" max="90" value="45"></div></div><button id="wmRun" class="btn btn-primary w-100 mt-3">Preview ลายน้ำ</button>`,
     pen: `<h2 class="h6">✍️ เขียนด้วยปากกา</h2><div class="row g-2"><div class="col-5"><label class="form-label">สี</label><input id="penColor" class="form-control form-control-color w-100" type="color" value="#e11d48"></div><div class="col-7"><label class="form-label">ความหนา <span id="penSizeOut">4</span> px</label><input id="penSize" class="form-range" type="range" min="1" max="30" value="4"></div></div><div class="d-grid gap-2 mt-3"><button id="penUndo" class="btn btn-outline-secondary">↶ ย้อนกลับเส้นล่าสุด</button><button id="penClear" class="btn btn-outline-danger">ล้างลายเส้นหน้านี้</button><button id="penSave" class="btn btn-primary">Preview ลายเส้น</button></div><p class="small-note mt-3 mb-0">รองรับ Mouse, Touch และ Stylus ลายเส้นจะแยกตามแต่ละหน้า</p>`,
-	deletePage: `<h2 class="h6">🗑️ Delete Page</h2><p class="small-note">คลิกเลือกหน้าที่ต้องการลบ (เลือกได้หลายหน้า) แล้วกดปุ่มด้านล่าง</p><div id="thumbGrid" class="thumb-grid mb-3"><div class="text-secondary small p-2">กำลังโหลดตัวอย่างหน้า...</div></div><button id="deletePageRun" class="btn btn-danger w-100" disabled>ลบหน้าที่เลือก (<span id="deleteCount">0</span>)</button>`,
-    reorderPage: `<h2 class="h6">📑 Reorder Pages</h2><p class="small-note">ลากหน้าเพื่อสลับตำแหน่งตามลำดับที่ต้องการ</p><div id="thumbGrid" class="thumb-grid mb-3"><div class="text-secondary small p-2">กำลังโหลดตัวอย่างหน้า...</div></div><button id="reorderRun" class="btn btn-primary w-100" disabled>บันทึกลำดับใหม่</button>`,
+	deletePage: `<h2 class="h6">🗑 Delete Page</h2><label>Page Number</label><input	id="deletePageNo" type="number"	min="1"	class="form-control"><button id="deletePageRun"	class="btn btn-danger mt-3 w-100">Delete Page</button>`,
+    reorderPage: `<h2 class="h6">📑 Reorder Pages</h2><label>New Order</label><input id="pageOrder" class="form-control" value="1,2,3"><div class="small-note mt-2">	ตัวอย่าง 3,1,2</div><button id="reorderRun" class="btn btn-primary mt-3 w-100">Reorder</button>`,
 	duplicatePage: `<h2 class="h6">
 		📄 Duplicate Page
 		</h2>
@@ -264,10 +226,7 @@ function selectTool(tool, button) {
 		id="blankPageRun"
 		class="btn btn-primary w-100">
 		Insert Blank Page
-		</button>`,
-	compress: `<h2 class="h6">🗜️ Compress PDF</h2><p class="small-note">แปลงแต่ละหน้าเป็นรูปที่คุณภาพลดลงแล้วประกอบกลับเป็น PDF ไฟล์จะเล็กลงมาก แต่ข้อความในหน้าจะไม่สามารถเลือก/คัดลอกได้อีก (เหมาะกับไฟล์สแกน หรือไฟล์ที่มีรูปเยอะ)</p><label class="form-label">คุณภาพรูป (%)</label><input id="compressQuality" type="range" min="20" max="95" value="60" class="form-range"><div id="compressQualityOut" class="small-note mb-2">60% • ค่ายิ่งต่ำ ไฟล์ยิ่งเล็กแต่ภาพยิ่งแตก</div><label class="form-label">ความละเอียด</label><select id="compressScale" class="form-select mb-3"><option value="0.7">ต่ำ (ไฟล์เล็กสุด)</option><option value="1" selected>กลาง (แนะนำ)</option><option value="1.5">สูง</option></select><button id="compressRun" class="btn btn-primary w-100">Preview การบีบอัด</button>`,
-	imageToPdf: `<h2 class="h6">🖼️➡️📄 รวมรูปภาพเป็น PDF</h2><p class="small-note">เลือกรูปได้หลายไฟล์ แต่ละรูปจะกลายเป็น 1 หน้า เรียงตามลำดับที่เลือกไฟล์ (ไม่จำเป็นต้องเปิด PDF หลักก่อน)</p><input id="imgToPdfFiles" type="file" accept="image/*" multiple class="form-control mb-3"><button id="imgToPdfRun" class="btn btn-primary w-100">สร้าง PDF จากรูปภาพ</button>`,
-	pdfToImage: `<h2 class="h6">📄➡️🖼️ แปลง PDF เป็นรูปภาพ</h2><p class="small-note">แปลงทุกหน้าของ PDF หลักเป็นไฟล์รูปภาพ แล้วรวมเป็น ZIP ให้ดาวน์โหลด</p><label class="form-label">รูปแบบ</label><select id="pdfImgFormat" class="form-select mb-3"><option value="png">PNG (คมชัด ไฟล์ใหญ่)</option><option value="jpeg" selected>JPEG (ไฟล์เล็กกว่า)</option></select><label class="form-label">ความละเอียด</label><select id="pdfImgScale" class="form-select mb-3"><option value="1">มาตรฐาน (1x)</option><option value="2" selected>สูง (2x)</option><option value="3">สูงมาก (3x)</option></select><button id="pdfToImageRun" class="btn btn-primary w-100">แปลงเป็นรูปภาพ (ZIP)</button>`
+		</button>`
   };
   els.panel.innerHTML = blocks[tool]; bindTool(tool);
 }
@@ -279,29 +238,21 @@ function bindTool(tool) {
   if(tool==="rotate") $("rotateRun").onclick=e=>runTask(e.currentTarget,"หมุน PDF",rotatePDF);
   if(tool==="watermark") $("wmRun").onclick=e=>runTask(e.currentTarget,"เพิ่มลายน้ำ",addWatermark);
   if(tool==="pen") { $("penSize").oninput=e=>$("penSizeOut").textContent=e.target.value; $("penUndo").onclick=undoPen; $("penClear").onclick=clearPen; $("penSave").onclick=e=>runTask(e.currentTarget,"บันทึกลายเส้น",savePenPDF); renderStrokes(); }
-  if(tool==="deletePage"){
+  if(tool==="deletePage")
     $("deletePageRun").onclick =
     e => runTask(
         e.currentTarget,
         "ลบหน้า",
-        deletePagesPDF
+        deletePagePDF
     );
-    renderPageThumbGrid("delete");
-  }
 
-  if(tool==="reorderPage"){
+  if(tool==="reorderPage")
     $("reorderRun").onclick =
     e => runTask(
         e.currentTarget,
         "จัดเรียงหน้า",
         reorderPDF
     );
-    renderPageThumbGrid("reorder");
-  }
-
-  if(tool==="compress") { $("compressQuality").oninput=e=>{$("compressQualityOut").textContent=`${e.target.value}% • ค่ายิ่งต่ำ ไฟล์ยิ่งเล็กแต่ภาพยิ่งแตก`;}; $("compressRun").onclick=e=>runTask(e.currentTarget,"บีบอัดไฟล์",compressPDF); }
-  if(tool==="imageToPdf") $("imgToPdfRun").onclick=e=>runTask(e.currentTarget,"สร้าง PDF จากรูปภาพ",imagesToPDF);
-  if(tool==="pdfToImage") $("pdfToImageRun").onclick=e=>runTask(e.currentTarget,"แปลงเป็นรูปภาพ",pdfToImages);
 
   if(tool==="duplicatePage")
     $("duplicateRun").onclick =
@@ -580,72 +531,26 @@ const savedTheme =
 
 applyTheme(savedTheme);
 
-/* ===== Page Thumbnail Grid: ใช้ร่วมกันโดย Delete Page (เห็นภาพ) และ Reorder Page (ลากสลับ) ===== */
-async function renderPageThumbGrid(mode){
-  const grid = $("thumbGrid");
-  if(!grid) return;
-  if(!requireFile()){ grid.innerHTML = `<div class="text-danger small p-2">กรุณาเลือกไฟล์ PDF หลักก่อน</div>`; return; }
-  grid.innerHTML = `<div class="text-secondary small p-2">กำลังโหลดตัวอย่างหน้า...</div>`;
-  let doc;
-  try { doc = await pdfjsLib.getDocument({ data: state.bytes.slice() }).promise; }
-  catch (error) { grid.innerHTML = `<div class="text-danger small p-2">โหลดตัวอย่างหน้าไม่สำเร็จ</div>`; return; }
-  const total = doc.numPages;
-  state.thumbOrder = Array.from({ length: total }, (_, i) => i);
-  state.thumbDeleteSet = new Set();
-  grid.innerHTML = "";
-  for (let i = 0; i < total; i++) {
-    const page = await doc.getPage(i + 1);
-    const baseViewport = page.getViewport({ scale: 1 });
-    const scale = 100 / baseViewport.width;
-    const viewport = page.getViewport({ scale });
-    const c = document.createElement("canvas");
-    c.width = Math.ceil(viewport.width); c.height = Math.ceil(viewport.height);
-    await page.render({ canvasContext: c.getContext("2d"), viewport }).promise;
-    const item = document.createElement("div");
-    item.className = "thumb-item" + (mode === "delete" ? " delete-mode" : "");
-    item.dataset.pageIndex = String(i);
-    item.draggable = mode === "reorder";
-    item.innerHTML = `<span class="thumb-label">${i + 1}</span><img src="${c.toDataURL("image/png")}" alt="หน้า ${i + 1}">`;
-    if (mode === "delete") {
-      item.addEventListener("click", () => {
-        if (state.thumbDeleteSet.has(i)) state.thumbDeleteSet.delete(i); else state.thumbDeleteSet.add(i);
-        item.classList.toggle("marked-delete");
-        $("deleteCount").textContent = state.thumbDeleteSet.size;
-        $("deletePageRun").disabled = state.thumbDeleteSet.size === 0;
-      });
-    } else if (mode === "reorder") {
-      item.addEventListener("dragstart", () => item.classList.add("dragging"));
-      item.addEventListener("dragend", () => { item.classList.remove("dragging"); syncThumbOrder(grid); });
-      item.addEventListener("dragover", e => { e.preventDefault(); item.classList.add("drop-target"); });
-      item.addEventListener("dragleave", () => item.classList.remove("drop-target"));
-      item.addEventListener("drop", e => {
-        e.preventDefault(); item.classList.remove("drop-target");
-        const dragging = grid.querySelector(".dragging");
-        if (!dragging || dragging === item) return;
-        const items = [...grid.children];
-        if (items.indexOf(dragging) < items.indexOf(item)) item.after(dragging); else item.before(dragging);
-        syncThumbOrder(grid);
-      });
-    }
-    grid.appendChild(item);
-  }
-  if (mode === "reorder") $("reorderRun").disabled = false;
-}
-function syncThumbOrder(grid) { state.thumbOrder = [...grid.children].map(el => Number(el.dataset.pageIndex)); }
-
-async function deletePagesPDF(){
+async function deletePagePDF(){
     if(!requireFile())
         throw new Error("กรุณาเลือก PDF หลัก");
-    if(!state.thumbDeleteSet || !state.thumbDeleteSet.size)
-        throw new Error("กรุณาคลิกเลือกหน้าที่ต้องการลบก่อน");
     const pdfDoc =
         await PDFDocument.load(
             state.bytes.slice()
         );
     const total = pdfDoc.getPageCount();
-    if(state.thumbDeleteSet.size >= total)
-        throw new Error("ไม่สามารถลบจนไม่เหลือหน้าใดเลยในเอกสารได้");
-    [...state.thumbDeleteSet].sort((a,b)=>b-a).forEach(idx => pdfDoc.removePage(idx));
+    const pageNo =
+        parseInt(
+            $("deletePageNo")
+            .value
+        );
+    if(!Number.isInteger(pageNo) || pageNo<1 || pageNo>total)
+        throw new Error(`หมายเลขหน้าต้องอยู่ระหว่าง 1 ถึง ${total}`);
+    if(total<=1)
+        throw new Error("ไม่สามารถลบหน้าเดียวที่เหลืออยู่ในเอกสารได้");
+    pdfDoc.removePage(
+        pageNo - 1
+    );
     const result =
         await pdfDoc.save();
     await setResult(
@@ -657,18 +562,26 @@ async function deletePagesPDF(){
 async function reorderPDF(){
     if(!requireFile())
         throw new Error("กรุณาเลือก PDF หลัก");
-    if(!state.thumbOrder || !state.thumbOrder.length)
-        throw new Error("กรุณารอโหลดตัวอย่างหน้าให้เสร็จก่อน");
     const sourcePdf =
         await PDFDocument.load(
             state.bytes.slice()
         );
+    const total = sourcePdf.getPageCount();
     const outputPdf =
         await PDFDocument.create();
+    const order =
+        $("pageOrder")
+        .value
+        .split(",")
+        .map(
+            x => parseInt(x.trim())-1
+        );
+    if(!order.length || order.some(n => !Number.isInteger(n) || n<0 || n>=total))
+        throw new Error(`กรุณาระบุลำดับหน้าเป็นตัวเลข 1 ถึง ${total} คั่นด้วยจุลภาค เช่น 3,1,2`);
     const pages =
         await outputPdf.copyPages(
             sourcePdf,
-            state.thumbOrder
+            order
         );
     pages.forEach(page => {
         outputPdf.addPage(page);
@@ -732,90 +645,4 @@ async function insertBlankPage(){
         result,
         `${safeName(state.file.name)}_blank-page.pdf`
     );
-}
-
-/* ===== Compress PDF: วาดแต่ละหน้าใหม่เป็น JPEG คุณภาพที่กำหนดแล้วประกอบกลับเป็น PDF ===== */
-async function compressPDF(){
-  if(!requireFile()) throw new Error("กรุณาเลือก PDF หลัก");
-  const quality = Number($("compressQuality").value) / 100;
-  const scale = Number($("compressScale").value) || 1;
-  const srcDoc = await pdfjsLib.getDocument({ data: state.bytes.slice() }).promise;
-  const outDoc = await PDFDocument.create();
-  for (let i = 1; i <= srcDoc.numPages; i++) {
-    const page = await srcDoc.getPage(i);
-    const viewport = page.getViewport({ scale });
-    const c = document.createElement("canvas");
-    c.width = Math.ceil(viewport.width); c.height = Math.ceil(viewport.height);
-    const ctx = c.getContext("2d");
-    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, c.width, c.height);
-    await page.render({ canvasContext: ctx, viewport }).promise;
-    const jpg = c.toDataURL("image/jpeg", quality);
-    const img = await outDoc.embedJpg(jpg);
-    const newPage = outDoc.addPage([viewport.width, viewport.height]);
-    newPage.drawImage(img, { x: 0, y: 0, width: viewport.width, height: viewport.height });
-  }
-  const result = await outDoc.save();
-  const before = state.bytes.length, after = result.length;
-  const savedPct = before > 0 ? Math.round((1 - after / before) * 100) : 0;
-  await setResult(result, `${safeName(state.file.name)}_compressed.pdf`);
-  setStatus(
-    savedPct > 0
-      ? `บีบอัดสำเร็จ: ${formatBytes(before)} → ${formatBytes(after)} (เล็กลง ${savedPct}%)`
-      : `แปลงไฟล์แล้ว แต่ขนาดไม่ได้เล็กลง (${formatBytes(before)} → ${formatBytes(after)}) ลองลดคุณภาพ/ความละเอียดดู`,
-    savedPct > 0 ? "success" : "warning"
-  );
-}
-
-/* ===== Image ↔ PDF ===== */
-function loadImageBitmap(file){
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`ไม่สามารถอ่านรูปภาพ: ${file.name}`));
-    img.src = URL.createObjectURL(file);
-  });
-}
-async function imagesToPDF(){
-  const files = [...($("imgToPdfFiles").files || [])];
-  if (files.length < 1) throw new Error("กรุณาเลือกรูปภาพอย่างน้อย 1 ไฟล์");
-  const doc = await PDFDocument.create();
-  for (const f of files) {
-    const imgEl = await loadImageBitmap(f);
-    const c = document.createElement("canvas");
-    c.width = imgEl.naturalWidth; c.height = imgEl.naturalHeight;
-    c.getContext("2d").drawImage(imgEl, 0, 0);
-    URL.revokeObjectURL(imgEl.src);
-    const jpgData = c.toDataURL("image/jpeg", 0.92);
-    const embedded = await doc.embedJpg(jpgData);
-    const page = doc.addPage([embedded.width, embedded.height]);
-    page.drawImage(embedded, { x: 0, y: 0, width: embedded.width, height: embedded.height });
-  }
-  const result = await doc.save();
-  await setResult(result, `images_to_pdf_${files.length}p.pdf`);
-}
-async function pdfToImages(){
-  if (!requireFile()) throw new Error("กรุณาเลือก PDF หลัก");
-  const scale = Number($("pdfImgScale").value) || 2;
-  const format = $("pdfImgFormat").value;
-  const doc = await pdfjsLib.getDocument({ data: state.bytes.slice() }).promise;
-  const zip = new JSZip();
-  const base = safeName(state.file.name);
-  const pad = String(doc.numPages).length;
-  for (let i = 1; i <= doc.numPages; i++) {
-    const page = await doc.getPage(i);
-    const viewport = page.getViewport({ scale });
-    const c = document.createElement("canvas");
-    c.width = Math.ceil(viewport.width); c.height = Math.ceil(viewport.height);
-    const ctx = c.getContext("2d");
-    if (format === "jpeg") { ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, c.width, c.height); }
-    await page.render({ canvasContext: ctx, viewport }).promise;
-    const dataUrl = c.toDataURL(format === "png" ? "image/png" : "image/jpeg", 0.92);
-    zip.file(`${base}_page${String(i).padStart(pad, "0")}.${format === "png" ? "png" : "jpg"}`, dataUrl.split(",")[1], { base64: true });
-  }
-  const blob = await zip.generateAsync({ type: "blob" });
-  state.resultBytes = null; state.resultData = blob; state.resultType = "application/zip";
-  state.resultFilename = `${base}_images.zip`; state.resultCommittable = false;
-  $("showResult").disabled = true; $("downloadResult").disabled = false;
-  if ($("commitResult")) $("commitResult").disabled = true;
-  setStatus(`แปลงเป็นรูปภาพสำเร็จ (${doc.numPages} หน้า) กด "Apply & Download" เพื่อโหลด ZIP`, "success");
 }
